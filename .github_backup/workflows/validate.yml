@@ -1,0 +1,24 @@
+# Lab 7: CI validate manifest
+name: validate
+on:
+  pull_request:
+    paths:
+    - 'k8s/**'
+    - 'k8s-api/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install kubeconform
+      run: |
+        curl -sSLo kc.tgz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+        tar -xzf kc.tgz
+        sudo mv kubeconform /usr/local/bin/
+
+    - name: Validate manifests
+      run: |
+        kubeconform -strict -summary k8s/
+        kubeconform -strict -summary k8s-api/

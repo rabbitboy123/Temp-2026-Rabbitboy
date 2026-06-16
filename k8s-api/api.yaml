@@ -1,0 +1,86 @@
+# Lab 3 buổi chiều: Rollout + Service + ServiceMonitor
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api
+  namespace: demo
+  labels:
+    app: api
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: w9-api:1  # Build từ app/
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        env:
+        - name: VERSION
+          value: "v1"
+        - name: ERROR_RATE
+          value: "0"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+  strategy:
+    canary:
+      analysis:
+        templates:
+        - templateName: success-rate
+        startingStep: 1  # Bắt đầu analysis từ step 1
+      steps:
+      - setWeight: 10
+      - pause: {duration: 2m}  # Quan sát 2 phút, analysis chạy nền
+      - setWeight: 50
+      - pause: {duration: 2m}
+      - setWeight: 100
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: demo
+  labels:
+    app: api
+spec:
+  selector:
+    app: api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api
+  namespace: demo
+  labels:
+    app: api
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
