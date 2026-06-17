@@ -12,6 +12,7 @@ spec:
   - name: slo
     interval: 30s
     rules:
+    
     # SLI: Success rate
     - record: api:success_rate:5m
       expr: |

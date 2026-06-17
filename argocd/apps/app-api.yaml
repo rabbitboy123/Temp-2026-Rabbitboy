@@ -1,19 +1,23 @@
-# Application cho monitoring (SLO + Alert)
+# ArgoCD App: Deploy API Rollout + Service + ServiceMonitor
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: monitoring
+  name: api
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
   source:
-    repoURL: https://github.com/Vuong-Bach/w10.git
-    path: k8s-monitoring
+    repoURL: https://github.com/Vuong-Bach/temp.git
+    path: app-api
     targetRevision: main
   destination:
     server: https://kubernetes.default.svc
-    namespace: monitoring
+    namespace: demo
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+    - ServerSideApply=true
