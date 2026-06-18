@@ -1,20 +1,20 @@
-# W10 - Progressive Delivery with Analysis
+# W10 - Progressive Delivery + Security Labs
 
-GitOps setup for API deployment với Argo Rollouts + AnalysisTemplate.
+GitOps setup for API deployment với Argo Rollouts + ESO + Trivy + Cosign.
 
-## Concept
+## Labs Overview
 
-Deploy API với **canary strategy** và **automated analysis**:
-- Rollout: 10% → 50% → 100%
-- AnalysisTemplate query Prometheus để check success rate ≥ 95%
-- Auto rollback nếu analysis fail
-- AlertManager gửi email khi có SLO violation
+| Lab | Chủ đề | Mô tả |
+|---|---|---|
+| Lab 1 | Progressive Delivery | Canary rollout + AnalysisTemplate + Gatekeeper |
+| Lab 2.1 | ESO | Rotate secret không restart pod |
+| Lab 2.2 | Trivy + Cosign | Scan CVE + ký image + admission verify |
 
 ## Requirements
 
 - Docker Desktop
 - kubectl
-- minikube
+- minikube (8GB RAM)
 - git
 
 ## Structure
@@ -22,28 +22,45 @@ Deploy API với **canary strategy** và **automated analysis**:
 ```
 w10/
 ├── app-api/              # API Rollout manifests
-│   ├── rollout.yaml      # Argo Rollout với canary strategy
-│   ├── service.yaml      # Service expose API
-│   └── servicemonitor.yaml # Prometheus metrics scraper
+│   └── rollout.yaml      # Argo Rollout + volume mount secret
 ├── app-analysis/         # Analysis manifests
-│   └── analysis-template.yaml # Template phân tích success rate
+│   └── analysis-template.yaml
 ├── app-alert/            # Alert manifests
-│   ├── prometheus-rules.yaml # PrometheusRule cho SLO alerts
-│   ├── email-secret.yaml # Gmail password (NOT COMMITTED)
-│   └── README.md         # Alert setup guide
+│   └── prometheus-rules.yaml
 ├── app-common/           # Common resources
-│   └── demo-namespace.yaml # Namespace demo
-├── src/                  # Source code
-│   └── api/              # Flask API application
+│   └── demo-namespace.yaml  # label: policy.sigstore.dev/include=true
+├── src/api/              # Flask API source
+│   ├── app.py            # Endpoint / + /healthz + /password
+│   └── Dockerfile
+├── eso/                  # Lab 2.1 - External Secrets
+│   ├── secret-store.yaml     # SecretStore (fake provider)
+│   └── external-secret.yaml  # ExternalSecret → K8s Secret
+├── signing/              # Lab 2.2 - Cosign
+│   └── cosign.pub            # Public key (KHÔNG commit private)
+├── policies/             # Lab 2.2 - Admission
+│   └── cluster-image-policy.yaml  # ClusterImagePolicy verify signature
+├── gatekeeper/           # Lab 1.2 - OPA Gatekeeper
+│   ├── controller/
+│   └── constraints/
+├── runbooks/             # Lab 2 - Operational docs
+│   ├── eso-secret-rotation.md      # Runbook: rotate secret
+│   ├── trivy-cosign-ci-failure.md  # Runbook: CI failure handling
+│   └── adr-001-fake-provider.md    # ADR: fake provider exception
 ├── argocd/
 │   ├── apps/             # ArgoCD Application manifests
-│   │   ├── app-api.yaml  # Deploy API Rollout
-│   │   ├── app-analysis.yaml # Deploy AnalysisTemplate
-│   │   ├── app-alert.yaml # Deploy PrometheusRule
-│   │   ├── app-common.yaml # Deploy common resources
-│   │   ├── k8s-prometheus.yaml # Prometheus + AlertManager
-│   │   └── k8s-rollout.yaml # Argo Rollouts controller
+│   │   ├── app-api.yaml
+│   │   ├── app-analysis.yaml
+│   │   ├── app-common.yaml
+│   │   ├── eso.yaml              # ESO operator (sync-wave -1)
+│   │   ├── eso-config.yaml       # ESO config (sync-wave 1)
+│   │   ├── policy-controller.yaml # Sigstore (sync-wave -1)
+│   │   ├── policies.yaml         # ClusterImagePolicy (sync-wave 1)
+│   │   ├── gatekeeper.yaml
+│   │   ├── k8s-rollout.yaml
+│   │   └── rbac.yaml
 │   └── root.yaml         # App of Apps pattern
+├── .github/workflows/
+│   └── build-push.yml    # CI: build → push → Trivy → Cosign → update rollout
 └── README.md
 ```
 
@@ -51,7 +68,7 @@ w10/
 
 ### 1. Setup Cluster
 ```bash
-minikube start -p w10 --driver=docker
+minikube start -p w10 --driver=docker --memory=8192
 kubectl config use-context w10
 ```
 
@@ -65,10 +82,7 @@ kubectl -n argocd rollout status deploy/argocd-server
 
 ### 3. Access ArgoCD UI
 ```bash
-# Port forward
 kubectl -n argocd port-forward svc/argocd-server 8080:443 &
-
-# Get password
 kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' | base64 -d; echo
 ```
@@ -78,130 +92,120 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 kubectl apply -f argocd/root.yaml
 ```
 
-### 5. Setup Email Alert (Optional)
-```bash
-# Follow instructions in app-alert/README.md
-cp app-alert/email-secret.yaml.example app-alert/email-secret.yaml
-kubectl apply -f app-alert/email-secret.yaml
+---
+
+## Lab 2.1 — ESO: Rotate Secret không Restart Pod
+
+### Kiến trúc
+
+```
+Fake Provider (SecretStore)
+      ↓ (ESO sync mỗi 10s)
+ExternalSecret → K8s Secret: api-db-secret
+      ↓ (volume mount)
+Pod đọc /etc/secrets/password
 ```
 
-## Components
+### Cách hoạt động
+- **SecretStore**: Dùng fake provider (xem [ADR-001](runbooks/adr-001-fake-provider.md))
+- **ExternalSecret**: refreshInterval `10s`, map key `/db/password` → K8s Secret
+- **App**: Đọc password qua **volume mount** (không phải env) → pod không cần restart khi secret thay đổi
 
-### Core
-- **Argo Rollouts**: Progressive delivery controller
-- **Prometheus Stack**: Metrics collection + AlertManager
-- **API**: Flask application với metrics endpoint
+### Sync Wave Order
+1. `eso.yaml` (wave -1): Cài ESO operator trước
+2. `eso-config.yaml` (wave 1): Apply SecretStore + ExternalSecret sau khi CRDs có sẵn
 
-### GitOps Applications
-- `app-api`: API Rollout với canary strategy
-- `app-analysis`: AnalysisTemplate cho automated validation
-- `app-alert`: PrometheusRule cho runtime alerting
-- `app-common`: Shared resources (namespace)
-- `k8s-prometheus`: Monitoring stack
-- `k8s-rollout`: Argo Rollouts controller
-
-## Verify Deployment
-
-### Check Rollout Status
+### Verify
 ```bash
-# Watch rollout progress
-kubectl get rollout api -n demo -w
+# Kiểm tra secret đã sync
+kubectl get secret api-db-secret -n demo -o jsonpath='{.data.password}' | base64 -d
 
-# Check current state
-kubectl get rollout api -n demo
+# Đổi value trong secret-store.yaml → commit + push → chờ < 60s
+kubectl get secret api-db-secret -n demo -o jsonpath='{.data.password}' | base64 -d
+# → Phải thấy value mới
 
-# Check pods
-kubectl get pods -n demo -l app=api
+# Pod không restart (AGE không đổi)
+kubectl get pod -n demo -l app=api
 ```
 
-### Check AnalysisRun
-```bash
-# List analysis runs
-kubectl get analysisrun -n demo
+---
 
-# Watch latest analysis
-kubectl get analysisrun -n demo --sort-by=.metadata.creationTimestamp | tail -1
+## Lab 2.2 — Trivy + Cosign: Scan + Ký + Verify Image
 
-# Describe for detailed metrics
-kubectl describe analysisrun -n demo <name>
+### CI Pipeline (`.github/workflows/build-push.yml`)
+
+```
+Build → Push GHCR → Trivy scan (exit-code 1) → Cosign sign → Update rollout.yaml
 ```
 
-### Query Prometheus Metrics
-```bash
-# Success rate metric
-kubectl run test-query --image=curlimages/curl:latest --rm -i --restart=Never -n monitoring -- \
-  curl -s 'http://kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/query?query=api:success_rate:5m'
+| Step | Tool | Hành vi |
+|---|---|---|
+| Scan CVE | Trivy | Fail pipeline nếu có HIGH/CRITICAL |
+| Ký image | Cosign | Sign với private key (GitHub Secret) |
+| Verify admission | Policy Controller | Reject unsigned image vào namespace `demo` |
+
+### Cosign Key Management
+- **Private key**: Chỉ lưu trong GitHub Secrets (`COSIGN_PRIVATE_KEY`, `COSIGN_PASSWORD`)
+- **Public key**: Commit tại `signing/cosign.pub` và dùng trong `policies/cluster-image-policy.yaml`
+- **KHÔNG BAO GIỜ commit private key vào repo**
+
+### ClusterImagePolicy
+```yaml
+# Chỉ cho phép image đã ký từ ghcr.io/rabbitboy123/**
+spec:
+  images:
+    - glob: "ghcr.io/rabbitboy123/**"
+  authorities:
+    - key:
+        data: |
+          -----BEGIN PUBLIC KEY-----
+          ...
+          -----END PUBLIC KEY-----
 ```
 
-## Test Scenarios (GitOps)
-
-### Test 1: Successful Deployment (Success Rate ≥ 90%)
-```bash
-# Edit rollout to deploy with no errors
-nano app-api/rollout.yaml
-# Set: ERROR_RATE: "0"
-
-git add app-api/rollout.yaml
-git commit -m "test: deploy with 0% error rate"
-git push origin main
-
-# Watch AnalysisRun succeed
-kubectl get analysisrun -n demo -w
+### Namespace Label
+```yaml
+# demo namespace phải có label để policy enforce
+metadata:
+  labels:
+    policy.sigstore.dev/include: "true"
 ```
 
-### Test 2: Failed Deployment (Success Rate < 90%)
+### Verify
 ```bash
-# Edit rollout to deploy with 15% error rate
-nano app-api/rollout.yaml
-# Set: ERROR_RATE: "0.15"
+# Verify image đã ký
+cosign verify --key signing/cosign.pub ghcr.io/rabbitboy123/w10-api:<version>
 
-git add app-api/rollout.yaml
-git commit -m "test: deploy with 15% error rate (should fail)"
-git push origin main
-
-# Watch AnalysisRun fail and auto rollback
-kubectl get analysisrun -n demo -w
-kubectl get rollout api -n demo
+# Test unsigned image bị reject
+kubectl run test --image=nginx -n demo
+# → Phải bị reject bởi policy controller
 ```
 
-### Test 3: Trigger SLO Alert Email
-```bash
-# Edit rollout to set 10% error rate (triggers alert, but passes canary)
-nano app-api/rollout.yaml
-# Set: ERROR_RATE: "0.10"
+---
 
-git add app-api/rollout.yaml
-git commit -m "test: deploy with 10% error rate (90% success)"
-git push origin main
+## Self-Check trước khi nộp
 
-# Canary passes (≥90%) but SLO alert fires (below 95%)
-# Wait 2-3 minutes, then check email inbox
-```
+| # | Kiểm tra | Lệnh | Kỳ vọng |
+|---|---|---|---|
+| 1 | ESO rotate < 60s | `kubectl get secret -o jsonpath` | Value mới sau < 60s |
+| 2 | Pod không restart | `kubectl get pod` | AGE không đổi |
+| 3 | CI đỏ khi CVE HIGH | GitHub Actions | Pipeline fail |
+| 4 | Unsigned image reject | `kubectl run test --image=nginx -n demo` | Bị reject |
+| 5 | Không lộ secret | `git log -p \| grep -i password` | Không có secret thật |
+| 6 | Fresh apply → tự xanh | `kubectl apply -f argocd/root.yaml` | Tất cả app synced |
 
+## Runbooks
 
-## Configuration Reference
-
-### Sync Waves
-ArgoCD applications deploy in order:
-- Wave -1: `app-common` (namespace)
-- Wave 0: `k8s-prometheus`, `k8s-rollout` (infrastructure)
-- Wave 1: `app-analysis`, `app-alert` (configuration)
-- Wave 2: `app-api` (application)
+- [ESO Secret Rotation](runbooks/eso-secret-rotation.md)
+- [Trivy / Cosign CI Failure](runbooks/trivy-cosign-ci-failure.md)
+- [ADR-001: Fake Provider Exception](runbooks/adr-001-fake-provider.md)
 
 ## Cleanup
 
 ```bash
-# Delete ArgoCD applications
 kubectl delete -f argocd/root.yaml
-
-# Wait for resources to be cleaned up
 kubectl get all -n demo
-kubectl get all -n monitoring
-
-# Delete ArgoCD
 kubectl delete ns argocd
-
-# Stop minikube
 minikube stop -p w10
 minikube delete -p w10
 ```

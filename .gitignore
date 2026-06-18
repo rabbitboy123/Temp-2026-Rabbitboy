@@ -4,6 +4,10 @@ k8s-monitoring/alertmanager-config.yaml
 **/email-secret.yaml
 *.secret.yaml
 
+# Cosign private key - NEVER COMMIT
+cosign.key
+*.pem
+
 # IDE
 .vscode/
 .idea/
