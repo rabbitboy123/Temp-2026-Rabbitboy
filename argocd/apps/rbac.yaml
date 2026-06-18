@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-rbac
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rabbitboy013/Temp-2026-Rabbitboy.git # Thay bằng chính xác URL repo của bạn nếu có khác biệt
+    targetRevision: main # Hoặc nhánh bạn đang code (ví dụ: main)
+    path: rbac
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default # Các ClusterRole sẽ tự động ăn theo toàn cục, còn RoleBinding của Alice sẽ tự vào đúng ns demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

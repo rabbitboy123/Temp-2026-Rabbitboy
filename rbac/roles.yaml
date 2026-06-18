@@ -1,0 +1,33 @@
+---
+# 1. Role dành cho Alice trong namespace demo
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: demo
+  name: developer-role
+rules:
+  - apiGroups: ["", "apps"] # "" đại diện cho core API (Pod, Service), "apps" chứa Deployment
+    resources: ["pods", "deployments", "services", "pods/log"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+
+---
+# 2. ClusterRole dành cho Bob (Xem và thao tác Pod toàn cụm)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-clusterrole
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec", "pods/portforward", "pods/log"]
+    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"] # Thao tác pod nhưng không được đụng vào Resource khác
+
+---
+# 3. ClusterRole dành cho Carol (Chỉ đọc toàn cụm)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: viewer-clusterrole
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"] # Chỉ cho phép xem, không cho create/delete
