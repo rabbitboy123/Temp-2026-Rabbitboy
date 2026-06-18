@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
       - name: api
-        image: ghcr.io/rabbitboy013/w10-api:0.0.1
+        image: ghcr.io/rabbitboy123/w10-api:0.0.1
         imagePullPolicy: Never
         ports:
         - containerPort: 8080

@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     # 1. Trỏ thẳng về chính repo cá nhân của bạn
-    repoURL: 'https://github.com/rabbitboy013/Temp-2026-Rabbitboy.git'
+    repoURL: 'https://github.com/rabbitboy123/Temp-2026-Rabbitboy.git'
     targetRevision: main
     # 2. Đường dẫn đến thư mục chứa file gatekeeper.yaml bạn vừa paste nội dung vào
     path: gatekeeper/controller
