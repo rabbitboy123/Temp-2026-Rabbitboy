@@ -19,9 +19,189 @@ spec:
         package k8smaxreplicas
 
         violation({"msg": msg}) {
-          # Tìm giá trị replicas trong manifest gửi lên
           spec_replicas := input.review.object.spec.replicas
-          # So sánh với tham số max truyền vào cấu hình
           spec_replicas > input.parameters.max
           msg := sprintf("So luong replicas (%v) vuot qua muc cho phep toi da la %v", [spec_replicas, input.parameters.max])
+        }
+
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredtags
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredTags
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            tags:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredtags
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          image := container.image
+          
+          # Lấy tag của image
+          tag := get_tag(image)
+          
+          # Kiểm tra nếu tag nằm trong danh sách cấm
+          forbidden := input.parameters.tags[_]
+          tag == forbidden
+          
+          msg := sprintf("Image '%v' has forbidden tag '%v'", [image, tag])
+        }
+
+        # Nếu không có dấu hai chấm ở phần cuối của image, tag mặc định là latest
+        get_tag(image) = "latest" {
+          parts := split(image, "/")
+          last_part := parts[count(parts) - 1]
+          not contains(last_part, ":")
+        }
+
+        # Nếu có dấu hai chấm ở phần cuối của image, lấy phần sau dấu hai chấm
+        get_tag(image) = tag {
+          parts := split(image, "/")
+          last_part := parts[count(parts) - 1]
+          contains(last_part, ":")
+          subparts := split(last_part, ":")
+          tag := subparts[1]
+        }
+
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8scontainerlimits
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sContainerLimits
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            cpu:
+              type: string
+            memory:
+              type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8scontainerlimits
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.cpu
+          msg := sprintf("Container '%v' does not have CPU limit defined", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.memory
+          msg := sprintf("Container '%v' does not have Memory limit defined", [container.name])
+        }
+
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8spspallowedusers
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sPSPAllowedUsers
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            runAsUser:
+              type: object
+              properties:
+                rule:
+                  type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8spspallowedusers
+
+        # Check container level
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          container.securityContext.runAsUser == 0
+          msg := sprintf("Container '%v' is running as root (runAsUser: 0)", [container.name])
+        }
+
+        # Check pod level if container level runAsUser is not defined
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not has_key(container.securityContext, "runAsUser")
+          input.review.object.spec.securityContext.runAsUser == 0
+          msg := sprintf("Pod securityContext runAsUser is 0 and container '%v' does not override it", [container.name])
+        }
+
+        # Check MustRunAsNonRoot rule: container level runAsNonRoot must be true or pod level must be true if not container level
+        violation[{"msg": msg}] {
+          input.parameters.runAsUser.rule == "MustRunAsNonRoot"
+          container := input.review.object.spec.containers[_]
+          
+          is_root(container)
+          msg := sprintf("Container '%v' violates MustRunAsNonRoot rule", [container.name])
+        }
+
+        is_root(container) {
+          container.securityContext.runAsUser == 0
+        }
+        is_root(container) {
+          not has_key(container.securityContext, "runAsUser")
+          input.review.object.spec.securityContext.runAsUser == 0
+        }
+        is_root(container) {
+          container.securityContext.runAsNonRoot == false
+        }
+        is_root(container) {
+          not has_key(container.securityContext, "runAsNonRoot")
+          input.review.object.spec.securityContext.runAsNonRoot == false
+        }
+
+        has_key(obj, key) {
+          _ := obj[key]
+        }
+
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8spsphostnetworkingports
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sPSPHostNetworkingPorts
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            hostNetwork:
+              type: boolean
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8spsphostnetworkingports
+
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostNetwork == true
+          input.parameters.hostNetwork == false
+          msg := "Using hostNetwork is not allowed"
         }
