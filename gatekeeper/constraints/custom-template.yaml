@@ -18,7 +18,7 @@ spec:
       rego: |
         package k8smaxreplicas
 
-        violation({"msg": msg}) {
+        violation[{"msg": msg}] {
           spec_replicas := input.review.object.spec.replicas
           spec_replicas > input.parameters.max
           msg := sprintf("So luong replicas (%v) vuot qua muc cho phep toi da la %v", [spec_replicas, input.parameters.max])
