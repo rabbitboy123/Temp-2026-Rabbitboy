@@ -3649,7 +3649,7 @@ metadata:
   name: gatekeeper-audit
   namespace: gatekeeper-system
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       control-plane: audit-controller
@@ -3754,7 +3754,7 @@ metadata:
   name: gatekeeper-controller-manager
   namespace: gatekeeper-system
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       control-plane: controller-manager
