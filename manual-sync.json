@@ -1,0 +1,8 @@
+{
+  "operation": {
+    "sync": {
+      "prune": true,
+      "revision": "main"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8smaxreplicas
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sMaxReplicas
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            max:
+              type: integer
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8smaxreplicas
+
+        violation({"msg": msg}) {
+          # Tìm giá trị replicas trong manifest gửi lên
+          spec_replicas := input.review.object.spec.replicas
+          # So sánh với tham số max truyền vào cấu hình
+          spec_replicas > input.parameters.max
+          msg := sprintf("So luong replicas (%v) vuot qua muc cho phep toi da la %v", [spec_replicas, input.parameters.max])
+        }

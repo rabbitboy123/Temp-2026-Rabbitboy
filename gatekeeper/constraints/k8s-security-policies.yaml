@@ -1,0 +1,82 @@
+---
+# ==========================================
+# LAB 1.2: 4 LUẬT CHẶN CƠ BẢN (Gợi ý dùng warn trước)
+# ==========================================
+
+# Luật 1: Cấm sử dụng image tag :latest
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredTags
+metadata:
+  name: block-latest-tag
+spec:
+  enforcementAction: warn
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+  parameters:
+    tags: ["latest"]
+
+---
+# Luật 2: Bắt buộc phải khai báo resources.limits
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sContainerLimits
+metadata:
+  name: container-must-have-limits
+spec:
+  enforcementAction: warn
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+  parameters:
+    cpu: "100m"
+    memory: "128Mi"
+
+---
+# Luật 3: Cấm chạy container bằng quyền root (runAsUser: 0)
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sPSPAllowedUsers
+metadata:
+  name: block-run-as-root
+spec:
+  enforcementAction: warn
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+  parameters:
+    runAsUser:
+      rule: MustRunAsNonRoot
+
+---
+# Luật 4: Cấm chiếm dụng dải mạng của máy chủ (hostNetwork: true)
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sPSPHostNetworkingPorts
+metadata:
+  name: block-host-network
+spec:
+  enforcementAction: warn
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+  parameters:
+    hostNetwork: false
+
+---
+# ==========================================
+# LAB 1.3: KÍCH HOẠT LUẬT CUSTOM (Max 5 Replicas)
+# ==========================================
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sMaxReplicas
+metadata:
+  name: deployment-max-5-replicas
+spec:
+  enforcementAction: deny # Luật này cho chặn đứng luôn để test vi phạm
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+  parameters:
+    max: 5
