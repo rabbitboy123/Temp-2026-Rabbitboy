@@ -4,15 +4,14 @@ metadata:
   name: gatekeeper-controller
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-2" # Giữ nguyên wave thấp để chạy đầu tiên
+    argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: default
   source:
-    # 1. Trỏ thẳng về chính repo cá nhân của bạn
+    # Trỏ thẳng về chính repo GitHub sạch của bạn
     repoURL: 'https://github.com/rabbitboy013/Temp-2026-Rabbitboy.git'
     targetRevision: main
-    # 2. Đường dẫn đến thư mục chứa file gatekeeper.yaml bạn vừa paste nội dung vào
-    path: gatekeeper/controller
+    path: gatekeeper/controller # Đường dẫn đến thư mục chứa file gatekeeper.yaml vừa tạo
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: gatekeeper-system
