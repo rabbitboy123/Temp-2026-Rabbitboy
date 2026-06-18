@@ -4,13 +4,14 @@ metadata:
   name: gatekeeper-controller
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-2" # Khởi động trước để làm nền cho các luật sau
+    argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: default
   source:
-    repoURL: 'https://open-policy-agent.github.io/gatekeeper-charts'
-    chart: gatekeeper
-    targetRevision: 3.14.0
+    # Kéo manifest tĩnh chính thức trực tiếp từ kho GitHub của Gatekeeper
+    repoURL: 'https://github.com/open-policy-agent/gatekeeper.git'
+    targetRevision: 'v3.14.0' # Hoặc bản stable bạn muốn
+    path: 'deploy/gatekeeper.yaml'
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: gatekeeper-system
