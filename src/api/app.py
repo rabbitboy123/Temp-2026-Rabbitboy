@@ -20,5 +20,13 @@ def index():
 def healthz():
     return "ok", 200
 
+@app.get("/password")
+def get_password():
+    path = "/etc/secrets/password"
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return jsonify(password=f.read().strip())
+    return jsonify(password="not-found"), 404
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
