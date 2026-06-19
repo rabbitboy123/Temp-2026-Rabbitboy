@@ -102,5 +102,5 @@ jobs:
 
       - name: Create git tag
         run: |
-          git tag v${{ steps.semver.outputs.version }}
-          git push origin v${{ steps.semver.outputs.version }}
+          git tag -f v${{ steps.semver.outputs.version }}
+          git push origin v${{ steps.semver.outputs.version }} --force
